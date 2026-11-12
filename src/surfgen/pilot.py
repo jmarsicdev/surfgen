@@ -102,7 +102,7 @@ def main():
         print(system, "\n---\n", user, sep="")
         return
 
-    run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{a.sample}_g{a.grid}{a.pitch}_L{a.level}_{a.model}"
+    run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{a.sample}_g{a.grid}{a.pitch}_L{a.level}_{a.model}_{a.effort}"
     run_dir.mkdir(parents=True)
     (run_dir / "prompt.txt").write_text(f"[system]\n{system}\n\n[user]\n{user}\n")
 

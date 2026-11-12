@@ -3,6 +3,8 @@
 Benchmark: can a model regenerate a measured surface from its ISO 25178-2 areal parameters alone?
 The design is in `docs/proposal.md` and `docs/outline.pdf`.
 
+Pilot results (tokens, cost, scores, figures): [`results/README.md`](results/README.md).
+
 ## Layout
 
 | Path | Contents |
