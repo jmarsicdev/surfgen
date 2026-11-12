@@ -19,7 +19,9 @@ def system_prompt(grid: int) -> str:
         "Output format, strictly:\n"
         "Line 1: SCALE <z_min_um> <z_max_um> giving the physical heights that integer 0 and integer "
         "1000 map to.\n"
-        f"Lines 2–{grid + 1}: {grid} rows of {grid} comma-separated integers from 0 to 1000.\n"
+        f"Lines 2–{grid + 1}: {grid} rows of {grid} comma-separated integers from 0 to 1000. Start "
+        f"each row with its row label and a colon, R001: for the first row through R{grid:03d}: for "
+        "the last.\n"
         "No other text, code, explanation, markdown."
     )
 
@@ -64,6 +66,9 @@ def parse(text: str, grid: int) -> dict:
         return {"ok": False, "failure": f"row_count_{len(body)}"}
     rows = []
     for i, ln in enumerate(body):
+        label, sep, ln = ln.partition(":")
+        if not sep or label.strip().upper() != f"R{i + 1:03d}":
+            return {"ok": False, "failure": f"row_label_row_{i}"}
         cells = [c.strip() for c in ln.rstrip(",").split(",")]
         if len(cells) != grid:
             return {"ok": False, "failure": f"col_count_{len(cells)}_row_{i}"}
