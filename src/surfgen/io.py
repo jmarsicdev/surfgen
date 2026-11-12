@@ -1,4 +1,4 @@
-"""Load Zygo .datx scans and cut the two 128 x 128 reference conditions."""
+"""Load Zygo .datx scans. The reference surface is the whole form-removed scan."""
 from __future__ import annotations
 
 import csv
@@ -13,7 +13,6 @@ ROOT = Path(__file__).resolve().parents[2]
 RAW_DIR = Path(os.environ.get("SURFGEN_RAW", ROOT / "data" / "raw" / "Renamed files"))
 RUNS_DIR = Path(os.environ.get("SURFGEN_RUNS", ROOT / "runs"))
 CATALOG = ROOT / "data" / "catalog" / "references.csv"
-GRID = 128
 
 _UNIT_TO_UM = {"NanoMeters": 1e-3, "MicroMeters": 1.0, "Meters": 1e6, "Angstroms": 1e-4}
 
@@ -52,28 +51,17 @@ def catalog() -> dict[str, dict]:
         return {row["sample"]: row for row in csv.DictReader(fh)}
 
 
-def reference(sample: str, condition: str) -> dict:
-    """Cut one reference surface.
-
-    coarse: central crop block-averaged to 128 x 128 (pitch = factor x instrument pitch).
-    native: central 128 x 128 crop at the instrument pitch.
-    """
+def reference(sample: str) -> dict:
+    """The whole scan at the instrument pitch, missing points filled; no cropping or resampling."""
     z, dx = load_datx(RAW_DIR / f"{sample}.datx")
-    missing = float(np.isnan(z).mean())
-    rows, cols = z.shape
-    if condition == "coarse":
-        k = min(rows, cols) // GRID
-        r0, c0 = (rows - k * GRID) // 2, (cols - k * GRID) // 2
-        crop = z[r0:r0 + k * GRID, c0:c0 + k * GRID]
-        with np.errstate(invalid="ignore"):
-            out = np.nanmean(crop.reshape(GRID, k, GRID, k), axis=(1, 3))
-        out, dx_out = fill_missing(out), dx * k
-        loc = {"row0": r0, "col0": c0, "block": k}
-    elif condition == "native":
-        r0, c0 = (rows - GRID) // 2, (cols - GRID) // 2
-        out, dx_out = fill_missing(z)[r0:r0 + GRID, c0:c0 + GRID], dx
-        loc = {"row0": r0, "col0": c0, "block": 1}
-    else:
-        raise ValueError(condition)
-    return {"sample": sample, "condition": condition, "z_um": out, "dx_um": dx_out,
-            "scan_shape": [rows, cols], "scan_dx_um": dx, "missing_fraction": missing, "location": loc}
+    return {"sample": sample, "z_um": fill_missing(z), "dx_um": dx, "shape": list(z.shape),
+            "missing_fraction": float(np.isnan(z).mean())}
+
+
+def output_pitch(ref: dict, grid: int, mode: str) -> float:
+    """Pitch of the generated grid: 'field' spans the scan's shorter side, 'native' keeps the scan pitch."""
+    if mode == "native":
+        return ref["dx_um"]
+    if mode == "field":
+        return ref["dx_um"] * min(ref["shape"]) / grid
+    raise ValueError(mode)

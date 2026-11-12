@@ -51,19 +51,23 @@ INFO = {  # unit, one-line definition used in the prompt
     "Shv": ("µm³", "mean hill volume"),
 }
 
-S_FILTER_PIXELS = 3.0  # S-filter nesting index as a multiple of the pitch (open question in the proposal)
+S_FILTER_PIXELS = 3.0  # S-filter nesting index as a multiple of the scan pitch (open question in the proposal)
 
 
-def prepare(z: np.ndarray, dx: float, s_pixels: float = S_FILTER_PIXELS) -> np.ndarray:
-    """F-operation (least-squares plane) then Gaussian S-filter; identical for reference and generated."""
+def prepare(z: np.ndarray, dx: float, s_um: float) -> np.ndarray:
+    """F-operation (least-squares plane) then Gaussian S-filter with nesting index s_um.
+
+    The nesting index is physical, so the reference scan and a generated grid at a
+    different pitch are filtered to the same bandwidth.
+    """
     rows, cols = z.shape
     yy, xx = np.mgrid[0:rows, 0:cols]
     a = np.column_stack([xx.ravel(), yy.ravel(), np.ones(z.size)])
     coef, *_ = np.linalg.lstsq(a, z.ravel(), rcond=None)
     z = z - (a @ coef).reshape(z.shape)
-    if s_pixels > 0:
+    if s_um > 0:
         # ISO 16610-61 Gaussian with cutoff lambda: sigma = lambda * sqrt(ln2 / 2) / pi
-        z = ndimage.gaussian_filter(z, sigma=s_pixels * np.sqrt(np.log(2) / 2) / np.pi, mode="nearest")
+        z = ndimage.gaussian_filter(z, sigma=s_um / dx * np.sqrt(np.log(2) / 2) / np.pi, mode="nearest")
     return z - z.mean()
 
 
@@ -164,10 +168,13 @@ def compute(z: np.ndarray, dx: float) -> dict[str, float]:
     return {k: float(v) for k, v in p.items()}
 
 
-def radial_psd(z: np.ndarray) -> np.ndarray:
-    psd = np.fft.fftshift(np.abs(np.fft.fft2(z)) ** 2)
-    c = np.array(z.shape) // 2
-    yy, xx = np.indices(z.shape)
-    r = np.hypot(yy - c[0], xx - c[1]).astype(int)
-    out = np.bincount(r.ravel(), psd.ravel()) / np.maximum(np.bincount(r.ravel()), 1)
-    return out[1:min(z.shape) // 2]
+def radial_psd(z: np.ndarray, dx: float) -> tuple[np.ndarray, np.ndarray]:
+    """Radially averaged areal PSD in physical units: (frequency 1/µm, density µm⁴)."""
+    n0, n1 = z.shape
+    psd = np.abs(np.fft.fft2(z)) ** 2 * dx * dx / (n0 * n1)
+    f = np.hypot(*np.meshgrid(np.fft.fftfreq(n0, dx), np.fft.fftfreq(n1, dx), indexing="ij"))
+    df = 1.0 / (min(n0, n1) * dx)
+    k = np.rint(f / df).astype(int).ravel()
+    out = np.bincount(k, psd.ravel()) / np.maximum(np.bincount(k), 1)
+    top = min(n0, n1) // 2
+    return np.arange(1, top) * df, out[1:top]
