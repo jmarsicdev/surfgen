@@ -1,0 +1,14 @@
+sample,raw_pair,category,process,material,objective,f_operation
+Sample_14,Sample_1,"directional, anisotropic",ground with a deep groove,316 SS,2.75x,best-fit plane
+Sample_15,Sample_2,isotropic,SLA ceramic printed,alumina,20x,best-fit plane
+Sample_16,Sample_3,periodic,turning,electroformed nickel (Rubert),5.5x,best-fit cylinder
+Sample_17,Sample_4,bi-directional,lapped,electroformed nickel (Rubert),5.5x,best-fit cylinder
+Sample_18,Sample_5,"isotropic, weak directionality",powder coated,,2.75x,best-fit plane
+Sample_19,Sample_6,engineered,DLP,photocurable polymer,20x,best-fit plane
+Sample_20,Sample_7,periodic,vertical milling,electroformed nickel (Rubert),5.5x,best-fit cylinder
+Sample_21,Sample_8,"directional, anisotropic",ground,316 SS,2.75x,best-fit plane
+Sample_22,Sample_9,"directional, anisotropic with pits",cold rolled,316 SS,2.75x,best-fit plane
+Sample_23,Sample_10,"directional, anisotropic",ground,316 SS,2.75x,best-fit plane
+Sample_24,Sample_11,isotropic,polished,316 SS CR sheetstock,1.5x,best-fit plane
+Sample_25,Sample_12,periodic,LPBF,Inconel 625,10x + 0.5 zoom,4th-order polynomial
+Sample_26,Sample_13,engineered,SLA,photocurable polymer,20x,best-fit plane
