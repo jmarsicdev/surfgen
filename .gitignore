@@ -1,0 +1,6 @@
+.venv/
+data/raw/
+runs/
+__pycache__/
+*.egg-info/
+.claude/
