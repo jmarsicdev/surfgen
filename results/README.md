@@ -17,6 +17,9 @@ or effort levels may be run-to-run variation.
 
 The exact prompt for each run is in its run folder as `prompt.txt`.
 
+The model × effort × grid comparison is written up on its own in
+[`ablation-model-effort-grid.md`](ablation-model-effort-grid.md).
+
 ## Output validity
 
 | Output contract | Runs | Valid |
