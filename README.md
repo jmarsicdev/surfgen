@@ -50,7 +50,9 @@ results must come from the API with a pinned model string.
 - Parameters are not validated against the ISO 25178-71 softgauges. The feature family uses a
   simplified segmentation (h-maxima pruning at 5 % of Sz, edge motifs kept, saddle height
   approximated), so treat Spd, Spc, S10z, Sda, Sha, Sdv, Shv as provisional.
-- The S-filter nesting index is set to 3 × the scan pitch (`S_FILTER_PIXELS`), pending the open
-  question in the proposal.
+- No S- or L-filter is applied (`S_FILTER_PIXELS = 0`). The supplied scans are form-removed only:
+  subtracting each from its raw pair leaves exactly the catalogued plane, cylinder or 4th-order
+  polynomial. Sample_24's pair (Sample_11, `.dat`) was not checked, and Sample_26 is identical to
+  Sample_13.
 - No per-surface error floor in the runner yet.
 - No API or batch client, no other models, no baselines, no K-repeat runner.

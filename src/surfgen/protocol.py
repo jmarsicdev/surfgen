@@ -29,13 +29,14 @@ def provided(level: int) -> list[str]:
 
 
 def user_prompt(params: dict, level: int, grid: int, dx_out: float, scan_shape, scan_dx: float,
-                s_um: float) -> str:
+                s_um: float, f_operation: str) -> str:
+    s_filter = f"Gaussian, nesting index {s_um:.4g} µm" if s_um > 0 else "none"
     lines = [
         f"Grid: {grid} × {grid} points, sampling interval {dx_out:.4g} µm in x and y.",
         f"The parameters were measured on the original scan ({scan_shape[1]} × {scan_shape[0]} points, "
-        f"sampling interval {scan_dx:.4g} µm) after it was levelled and filtered with [S-filter: Gaussian, "
-        f"nesting index {s_um:.4g} µm; F-operation: least-squares plane; L-filter: none]. Your surface "
-        f"will be levelled and filtered the same way before it is measured.",
+        f"sampling interval {scan_dx:.4g} µm) after it was levelled and filtered with [S-filter: {s_filter}; "
+        f"F-operation: {f_operation}; L-filter: none]. Your surface will be levelled with a "
+        f"least-squares plane before it is measured.",
         "",
         "Parameters (ISO 25178-2):",
     ]

@@ -51,7 +51,9 @@ INFO = {  # unit, one-line definition used in the prompt
     "Shv": ("µm³", "mean hill volume"),
 }
 
-S_FILTER_PIXELS = 3.0  # S-filter nesting index as a multiple of the scan pitch (open question in the proposal)
+# S-filter nesting index as a multiple of the scan pitch; 0 = none. The supplied scans are
+# form-removed only (verified against their raw pairs), so no S- or L-filter is applied.
+S_FILTER_PIXELS = 0.0
 
 
 def prepare(z: np.ndarray, dx: float, s_um: float) -> np.ndarray:

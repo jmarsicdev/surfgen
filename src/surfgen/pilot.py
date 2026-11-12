@@ -96,7 +96,8 @@ def main():
     p_ref = params.compute(z_ref, dx)
     dx_out = io.output_pitch(ref, a.grid, a.pitch)
     system = protocol.system_prompt(a.grid)
-    user = protocol.user_prompt(p_ref, a.level, a.grid, dx_out, ref["shape"], dx, s_um)
+    user = protocol.user_prompt(p_ref, a.level, a.grid, dx_out, ref["shape"], dx, s_um,
+                                io.catalog()[a.sample]["f_operation"])
     if a.dry_run:
         print(system, "\n---\n", user, sep="")
         return
