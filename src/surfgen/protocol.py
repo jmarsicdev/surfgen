@@ -1,13 +1,16 @@
-"""Prompt construction, output parsing and scoring, after docs/outline.pdf.
+"""Prompt construction, output parsing and scoring.
 
-Changed from the outline on 2026-11-12: the output grid is a setting (200 x 200 by
-default, was 128 x 128) and the target parameters are measured on the whole scan.
+Design as of 2026-11-17: one conversation per surface, two stages. Stage 1 gives the
+height and functional/volume families; stage 2 adds spatial, hybrid and feature in the
+same conversation. The prompt states neither the levelling nor, by default, the pitch.
 """
 from __future__ import annotations
 
 import numpy as np
 
-from .params import FAMILIES, INFO, LEVELS, radial_psd
+from .params import FAMILIES, INFO, radial_psd
+
+STAGES = [["height", "functional"], ["spatial", "hybrid", "feature"]]
 
 
 def system_prompt(grid: int) -> str:
@@ -26,26 +29,26 @@ def system_prompt(grid: int) -> str:
     )
 
 
-def provided(level: int) -> list[str]:
-    return [p for fam in LEVELS[:level] for p in FAMILIES[fam]]
+def stage_params(stage: int) -> list[str]:
+    """Parameters introduced at this stage (1-based)."""
+    return [p for fam in STAGES[stage - 1] for p in FAMILIES[fam]]
 
 
-def user_prompt(params: dict, level: int, grid: int, dx_out: float, scan_shape, scan_dx: float,
-                s_um: float, f_operation: str) -> str:
-    s_filter = f"Gaussian, nesting index {s_um:.4g} µm" if s_um > 0 else "none"
-    lines = [
-        f"Grid: {grid} × {grid} points, sampling interval {dx_out:.4g} µm in x and y.",
-        f"The parameters were measured on the original scan ({scan_shape[1]} × {scan_shape[0]} points, "
-        f"sampling interval {scan_dx:.4g} µm) after it was levelled and filtered with [S-filter: {s_filter}; "
-        f"F-operation: {f_operation}; L-filter: none]. Your surface will be levelled with a "
-        f"least-squares plane before it is measured.",
-        "",
-        "Parameters (ISO 25178-2):",
-    ]
-    for name in provided(level):
+def given_through(stage: int) -> list[str]:
+    return [p for s in range(1, stage + 1) for p in stage_params(s)]
+
+
+def user_prompt(params: dict, stage: int, grid: int, dx_out: float | None = None) -> str:
+    """Stage prompt. dx_out, if given, adds the grid line to stage 1."""
+    lines = []
+    if stage == 1 and dx_out is not None:
+        lines += [f"Grid: {grid} × {grid} points, sampling interval {dx_out:.4g} µm in x and y.", ""]
+    lines.append("Parameters (ISO 25178-2):" if stage == 1 else "Additional parameters (ISO 25178-2):")
+    for name in stage_params(stage):
         unit, definition = INFO[name]
         lines.append(f"{name} = {params[name]:.4g}{' ' + unit if unit else ''} — {definition}")
-    lines += ["", "Generate the height map."]
+    lines += ["", "Generate the height map." if stage == 1 else
+              "Generate the height map again so that all parameters given so far are matched."]
     return "\n".join(lines)
 
 
@@ -94,8 +97,8 @@ def psd_distance(z_ref, dx_ref, z_gen, dx_gen) -> float:
     return float(np.sqrt(np.mean((np.log10(pg[band]) - ref_at) ** 2)))
 
 
-def score(ref: dict, gen: dict, level: int) -> dict:
-    given = set(provided(level))
+def score(ref: dict, gen: dict, given_names) -> dict:
+    given = set(given_names)
     per_param = {}
     for name, target in ref.items():
         got = gen[name]

@@ -2,6 +2,28 @@
 
 Open items from the 2026-11-12 pilot. Background and numbers are in `results/README.md`.
 
+## Design changes on 2026-11-17
+
+The benchmark is now one conversation per surface in two stages (height + functional/volume, then
+spatial + hybrid + feature), with no sampling interval or levelling information in the prompt.
+Initial tests are on Sample_23 (original name Sample_8_13_2.75x). Items below that mention five
+levels or the prompt's grid sentence predate this.
+
+- [ ] **Stage 2 wording is mine:** "Additional parameters (ISO 25178-2): … Generate the height map
+      again so that all parameters given so far are matched." Replace with the wording from the
+      running doc if it differs.
+- [ ] **The system prompt still says "along with the measurement grid"**, which is no longer given.
+- [ ] **No pitch in the prompt.** Every stage 2 parameter except Str and Std depends on the
+      sampling interval, so the model has to guess it; scoring uses the true one. Compare the
+      with-pitch and without-pitch chains on Sample_21 before settling this.
+- [ ] **Slope targets are out of reach at 200 × 200.** For Sample_21, pure pixel-scale noise at the
+      target Sq gives Sdq = 0.0185 against a target of 0.0543.
+- [ ] Sample names: the catalog's original name "Sample_8_13_2.75x" is raw file Sample_10 and
+      form-removed file Sample_23. Raw file "Sample_8" is a different scan (Ground_10_top6,
+      form-removed Sample_21), which all results before 2026-11-17 used.
+- [ ] The professor's ChatGPT test produced 1000 × 1000 by writing and running code. Decide whether
+      code generation becomes a condition here.
+
 ## Decision: how to handle the resolution mismatch
 
 Targets come from the full-resolution scan, and the model outputs a coarser grid over the same

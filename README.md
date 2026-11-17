@@ -14,7 +14,7 @@ Pilot results (tokens, cost, scores, figures): [`results/README.md`](results/REA
 | `src/surfgen/io.py` | `.datx` loader; whole-scan reference and output pitch |
 | `src/surfgen/params.py` | Levelling, S-filter, the 28 parameters in five families |
 | `src/surfgen/protocol.py` | System and user prompt, output parser, scoring |
-| `src/surfgen/pilot.py` | One generation end to end, with a budget projection |
+| `src/surfgen/pilot.py` | One two-stage conversation end to end, with a budget projection |
 | `runs/` | One folder per run: prompt, response, arrays, `record.json`, figure. Not in git |
 
 ## Setup
@@ -24,25 +24,35 @@ uv venv .venv
 uv pip install --python .venv/bin/python -e .
 ```
 
-## Design as of 2026-11-12
+## Design as of 2026-11-17
+
+One conversation per surface, in two stages:
+
+1. Height (Sa, Sq, Ssk, Sku, Sp, Sv, Sz) and functional/volume (Sk, Spk, Svk, Smr1, Smr2, Vmp, Vmc,
+   Vvc, Vvv). The model returns a height map.
+2. In the same conversation, spatial (Sal, Str, Std), hybrid (Sdq, Sdr) and feature (Spd, Spc, S10z,
+   Sda, Sha, Sdv, Shv) are added. The model returns a second height map.
 
 Target parameters are measured on the whole form-removed scan at the instrument pitch, with no
-cropping or resampling. The model returns a 200 × 200 grid (`--grid`). This replaces the proposal's
-128 × 128 coarse and native conditions.
+cropping or resampling. The model returns a 200 × 200 grid (`--grid`) of labelled rows. The prompt
+states neither the levelling nor the sampling interval; `--state-pitch` adds one line giving the grid
+size and interval. Scoring always uses the pitch at which the grid spans the scan's field of view
+(about 5× the scan's), after a least-squares plane is removed.
 
-`--pitch field` (default) makes the 200 × 200 grid span the scan's field of view, so its pitch is
-about 5× the scan's. `--pitch native` keeps the scan pitch, so the grid covers about 1/25 of the area.
-Either way the generated grid cannot hit every whole-scan target, because several parameters depend
-on pitch or on area. Score results against the floor a real surface reaches on the same grid.
+The generated grid cannot hit every whole-scan target, because several parameters depend on pitch.
+Score results against what the measured surface reaches when resampled to the same grid.
 
-## One pilot run
+This replaces the proposal's five independent levels and its 128 × 128 coarse and native conditions.
+The earlier single-request results in `results/` used five families in one prompt.
+
+## One pilot chain
 
 ```sh
-.venv/bin/python -I -m surfgen.pilot --sample Sample_21 --level 5 --grid 200 \
+.venv/bin/python -I -m surfgen.pilot --sample Sample_23 --grid 200 \
     --model claude-opus-5-5 --effort medium
 ```
 
-`--dry-run` prints the prompt without calling a model. The pilot client is the Claude Code CLI in
+`--dry-run` prints the prompts without calling a model. The pilot client is the Claude Code CLI in
 print mode, which bills the claude.ai subscription instead of the API. It sends only the benchmark's
 system and user prompt, with no tools, so the token counts carry over to API pricing. Reported
 results must come from the API with a pinned model string.

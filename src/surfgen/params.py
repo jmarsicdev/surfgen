@@ -18,7 +18,6 @@ FAMILIES = {
     "functional": ["Sk", "Spk", "Svk", "Smr1", "Smr2", "Vmp", "Vmc", "Vvc", "Vvv"],
     "feature": ["Spd", "Spc", "S10z", "Sda", "Sha", "Sdv", "Shv"],
 }
-LEVELS = list(FAMILIES)
 
 INFO = {  # unit, one-line definition used in the prompt
     "Sa": ("µm", "arithmetic mean height"),
@@ -160,7 +159,7 @@ def compute(z: np.ndarray, dx: float) -> dict[str, float]:
          "Sku": float(np.mean(z ** 4) / sq ** 4) if sq else 0.0,
          "Sp": float(z.max()), "Sv": float(-z.min()), "Sz": float(z.max() - z.min())}
     if sq == 0:
-        return p | {k: float("nan") for fam in LEVELS[1:] for k in FAMILIES[fam]}
+        return p | {k: float("nan") for fam in list(FAMILIES)[1:] for k in FAMILIES[fam]}
     p |= _spatial(z, dx)
     gy, gx = np.gradient(z, dx)
     p |= {"Sdq": float(np.sqrt(np.mean(gx ** 2 + gy ** 2))),

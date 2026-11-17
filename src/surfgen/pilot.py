@@ -1,12 +1,15 @@
-"""One stateless generation, scored, with a budget projection from the measured tokens.
+"""One two-stage conversation for one surface, scored, with a budget projection.
 
-    python -I -m surfgen.pilot --sample Sample_21 --level 5 --grid 200
+    python -I -m surfgen.pilot --sample Sample_23 --grid 200
 
-Targets are measured on the whole scan; the model returns a grid x grid height map.
+Stage 1 gives the height and functional/volume families; stage 2 adds spatial, hybrid and
+feature in the same conversation. Targets are measured on the whole scan. The prompt states
+no levelling and, unless --state-pitch is given, no sampling interval; scoring always uses
+the pitch at which the grid spans the scan's field of view.
 
 Client: the Claude Code CLI in print mode, billed to the claude.ai subscription rather
-than the API. It sends the same system and user prompt with no tools, so token counts
-transfer to the API; reported results must still come from the API (pinned model, batch).
+than the API. It sends only the benchmark prompts with no tools, so token counts transfer
+to the API; reported results must still come from the API (pinned model, batch).
 """
 from __future__ import annotations
 
@@ -29,18 +32,21 @@ from . import io, params, protocol
 # $/MTok (input, output), standard; batch is half. Source: Anthropic price list as of 2026-11-03.
 PRICES = {"claude-sonnet-5-5": (2, 10), "claude-opus-5-5": (4, 20),
           "claude-fable-5-2": (8, 40), "claude-fable-5-1": (10, 50)}
-# 13 references x 5 levels x K repeats
-DESIGNS = {"K=3": 13 * 5 * 3, "K=5": 13 * 5 * 5}
+# surfaces x K repeats; one chain covers both stages
+DESIGNS = {"7 surfaces, K=3": 21, "7 surfaces, K=5": 35}
 
 
-def call_claude_cli(model: str, effort: str, system: str, user: str, timeout_s: int) -> dict:
+def call_claude_cli(model: str, effort: str, system: str, user: str, cwd: str, timeout_s: int,
+                    resume: str | None = None) -> dict:
+    """One turn. Pass the previous turn's session id as `resume` to continue the conversation."""
     env = dict(os.environ, CLAUDE_CODE_MAX_OUTPUT_TOKENS="128000")
     cmd = ["claude", "-p", "--model", model, "--effort", effort, "--system-prompt", system,
            "--tools", "", "--strict-mcp-config", "--output-format", "json"]
-    with tempfile.TemporaryDirectory() as cwd:  # empty directory: no project context is attached
-        t0 = time.time()
-        proc = subprocess.run(cmd, input=user, capture_output=True, text=True, env=env, cwd=cwd,
-                              timeout=timeout_s)
+    if resume:
+        cmd += ["--resume", resume]
+    t0 = time.time()
+    proc = subprocess.run(cmd, input=user, capture_output=True, text=True, env=env, cwd=cwd,
+                          timeout=timeout_s)
     if not proc.stdout.strip():
         raise RuntimeError(f"claude exited {proc.returncode}: {proc.stderr[-2000:]}")
     out = json.loads(proc.stdout)
@@ -48,45 +54,53 @@ def call_claude_cli(model: str, effort: str, system: str, user: str, timeout_s: 
     return out
 
 
+def tokens(resp: dict) -> dict:
+    u = resp.get("usage", {})
+    n_in = sum(u.get(k, 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+    n_out = u.get("output_tokens", 0)
+    think = u.get("output_tokens_details", {}).get("thinking_tokens", 0)
+    return {"input": n_in, "output_total": n_out, "thinking": think, "visible": n_out - think}
+
+
 def projection(input_tokens: int, output_tokens: int) -> dict:
+    """Batch cost of one chain, with all input priced at the uncached rate."""
     table = {}
     for model, (pin, pout) in PRICES.items():
-        per_run = (input_tokens * pin + output_tokens * pout) / 1e6
-        table[model] = {"per_run_standard": per_run, "per_run_batch": per_run / 2,
-                        **{name: runs * per_run / 2 for name, runs in DESIGNS.items()}}
+        chain = (input_tokens * pin + output_tokens * pout) / 2e6
+        table[model] = {"per_chain_batch": chain, **{name: n * chain for name, n in DESIGNS.items()}}
     return table
 
 
-def figure(z_ref, dx_ref, z_gen, dx_gen, path, title):
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4))
+def figure(z_ref, dx_ref, stages, dx_gen, path, title):
+    fig, axes = plt.subplots(1, len(stages) + 2, figsize=(4.6 * (len(stages) + 2), 4.2))
     lim = np.percentile(np.abs(z_ref), 99.5)
-    for ax, z, dx, name in ((axes[0], z_ref, dx_ref, "reference (whole scan)"),
-                            (axes[1], z_gen, dx_gen, "generated")):
+    panels = [("measured scan", z_ref, dx_ref)] + [(f"stage {i}", z, dx_gen) for i, z in stages]
+    for ax, (name, z, dx) in zip(axes, panels):
         im = ax.imshow(z, cmap="viridis", vmin=-lim, vmax=lim,
-                       extent=[0, z.shape[1] * dx, z.shape[0] * dx, 0])
-        ax.set(title=f"{name}, {z.shape[1]} × {z.shape[0]}", xlabel="x (µm)", ylabel="y (µm)")
+                       extent=[0, z.shape[1] * dx / 1000, z.shape[0] * dx / 1000, 0])
+        ax.set(title=f"{name}, {z.shape[1]} × {z.shape[0]}", xlabel="x (mm)", ylabel="y (mm)")
         fig.colorbar(im, ax=ax, label="height (µm)", shrink=0.8)
         f, p = params.radial_psd(z, dx)
-        axes[2].loglog(f, p, label=name)
-    axes[2].set(title="radially averaged PSD", xlabel="spatial frequency (1/µm)", ylabel="PSD (µm⁴)")
-    axes[2].legend()
+        axes[-1].loglog(f, p, label=name)
+    axes[-1].set(title="radially averaged PSD", xlabel="spatial frequency (1/µm)", ylabel="PSD (µm⁴)")
+    axes[-1].grid(alpha=0.3, which="both", lw=0.4)
+    axes[-1].legend()
     fig.suptitle(title)
     fig.tight_layout()
-    fig.savefig(path, dpi=130)
+    fig.savefig(path, dpi=120)
     plt.close(fig)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sample", default="Sample_21")
-    ap.add_argument("--level", type=int, default=5, choices=range(1, 6))
+    ap.add_argument("--sample", default="Sample_23", help="form-removed file name; Sample_23 is Sample_8_13_2.75x")
     ap.add_argument("--grid", type=int, default=200, help="output is grid x grid")
-    ap.add_argument("--pitch", default="field", choices=["field", "native"],
-                    help="field: output spans the scan's field of view; native: output keeps the scan pitch")
+    ap.add_argument("--state-pitch", action="store_true",
+                    help="tell the model the grid size and sampling interval (off by default)")
     ap.add_argument("--model", default="claude-opus-5-5")
     ap.add_argument("--effort", default="medium")
-    ap.add_argument("--timeout", type=int, default=5400)
-    ap.add_argument("--dry-run", action="store_true", help="build and print the prompt, do not call a model")
+    ap.add_argument("--timeout", type=int, default=5400, help="seconds per stage")
+    ap.add_argument("--dry-run", action="store_true", help="print the prompts, do not call a model")
     a = ap.parse_args()
 
     ref = io.reference(a.sample)
@@ -94,63 +108,85 @@ def main():
     s_um = params.S_FILTER_PIXELS * dx
     z_ref = params.prepare(ref["z_um"], dx, s_um)
     p_ref = params.compute(z_ref, dx)
-    dx_out = io.output_pitch(ref, a.grid, a.pitch)
+    dx_out = io.output_pitch(ref, a.grid, "field")
     system = protocol.system_prompt(a.grid)
-    user = protocol.user_prompt(p_ref, a.level, a.grid, dx_out, ref["shape"], dx, s_um,
-                                io.catalog()[a.sample]["f_operation"])
+    n_stages = len(protocol.STAGES)
+    prompts = [protocol.user_prompt(p_ref, s, a.grid, dx_out if a.state_pitch else None)
+               for s in range(1, n_stages + 1)]
     if a.dry_run:
-        print(system, "\n---\n", user, sep="")
+        print("[system]", system, sep="\n")
+        for s, text in enumerate(prompts, 1):
+            print(f"\n[user, stage {s}]", text, sep="\n")
         return
 
-    run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{a.sample}_g{a.grid}{a.pitch}_L{a.level}_{a.model}_{a.effort}"
+    pitch_tag = "pitch" if a.state_pitch else "nopitch"
+    run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{a.sample}_chain_g{a.grid}_{pitch_tag}_{a.model}_{a.effort}"
     run_dir.mkdir(parents=True)
-    (run_dir / "prompt.txt").write_text(f"[system]\n{system}\n\n[user]\n{user}\n")
-
-    resp = call_claude_cli(a.model, a.effort, system, user, a.timeout)
-    text = resp.pop("result", "") or ""
-    (run_dir / "response.txt").write_text(text)
-    usage = resp.get("usage", {})
-    n_in = sum(usage.get(k, 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
-    n_out = usage.get("output_tokens", 0)
-    n_think = usage.get("output_tokens_details", {}).get("thinking_tokens", 0)
+    (run_dir / "prompt.txt").write_text(
+        f"[system]\n{system}\n" + "".join(f"\n[user, stage {s}]\n{t}\n" for s, t in enumerate(prompts, 1)))
     record = {
-        "sample": a.sample, "level": a.level, "grid": a.grid, "pitch_mode": a.pitch, "model": a.model,
+        "sample": a.sample, "grid": a.grid, "pitch_stated": a.state_pitch, "model": a.model,
         "effort": a.effort, "temperature": "not settable on this model", "client": "claude-code-cli (subscription)",
         "catalog": io.catalog()[a.sample], "scan_shape": ref["shape"], "scan_dx_um": dx,
-        "output_dx_um": dx_out, "s_filter_um": s_um, "missing_fraction": ref["missing_fraction"],
-        "tokens": {"input": n_in, "output_total": n_out, "thinking": n_think, "visible": n_out - n_think},
-        "stop_reason": resp.get("stop_reason"), "wall_seconds": resp["wall_seconds"],
-        "cli_reported_cost_usd": resp.get("total_cost_usd"),
-        "projection_usd": projection(n_in, n_out), "cli_response": resp,
+        "output_dx_um": dx_out, "s_filter_um": s_um, "missing_fraction": ref["missing_fraction"], "stages": [],
     }
 
-    parsed = protocol.parse(text, a.grid)
-    record["parse"] = {k: parsed.get(k) for k in ("ok", "failure", "strict", "scale")}
-    if parsed["ok"]:
-        z_gen = params.prepare(parsed["z_um"], dx_out, s_um)
-        np.save(run_dir / "generated.npy", z_gen)
-        record["score"] = protocol.score(p_ref, params.compute(z_gen, dx_out), a.level)
-        record["score"]["psd_log10_rms"] = protocol.psd_distance(z_ref, dx, z_gen, dx_out)
-        figure(z_ref, dx, z_gen, dx_out, run_dir / "comparison.png",
-               f"{a.sample} ({record['catalog']['process']}), level {a.level}, {a.model}")
-    (run_dir / "record.json").write_text(json.dumps(record, indent=2))
+    session, surfaces = None, []
+    with tempfile.TemporaryDirectory() as cwd:  # empty directory: no project context; shared so stage 2 can resume
+        for s, text in enumerate(prompts, 1):
+            resp = call_claude_cli(a.model, a.effort, system, text, cwd, a.timeout, resume=session)
+            session = resp.get("session_id")
+            out = resp.pop("result", "") or ""
+            (run_dir / f"response_stage{s}.txt").write_text(out)
+            parsed = protocol.parse(out, a.grid)
+            stage = {"stage": s, "families": protocol.STAGES[s - 1], "tokens": tokens(resp),
+                     "stop_reason": resp.get("stop_reason"), "wall_seconds": resp["wall_seconds"],
+                     "cli_reported_cost_usd": resp.get("total_cost_usd"),
+                     "parse": {k: parsed.get(k) for k in ("ok", "failure", "strict", "scale")},
+                     "cli_response": resp}
+            if parsed["ok"]:
+                z_gen = params.prepare(parsed["z_um"], dx_out, s_um)
+                np.save(run_dir / f"generated_stage{s}.npy", z_gen)
+                stage["score"] = protocol.score(p_ref, params.compute(z_gen, dx_out), protocol.given_through(s))
+                stage["score"]["psd_log10_rms"] = protocol.psd_distance(z_ref, dx, z_gen, dx_out)
+                surfaces.append((s, z_gen))
+            record["stages"].append(stage)
+            (run_dir / "record.json").write_text(json.dumps(record, indent=2))
 
-    t = record["tokens"]
+    tot_in = sum(st["tokens"]["input"] for st in record["stages"])
+    tot_out = sum(st["tokens"]["output_total"] for st in record["stages"])
+    record["chain_tokens"] = {"input": tot_in, "output_total": tot_out}
+    record["projection_usd"] = projection(tot_in, tot_out)
+    (run_dir / "record.json").write_text(json.dumps(record, indent=2))
+    if surfaces:
+        figure(z_ref, dx, surfaces, dx_out, run_dir / "comparison.png",
+               f"{a.sample} ({record['catalog']['process']}), {a.model}, {a.effort} effort, "
+               f"pitch {'stated' if a.state_pitch else 'not stated'}")
+
     print(f"run dir: {run_dir}")
-    print(f"tokens: input {t['input']}, output {t['output_total']} (thinking {t['thinking']}, visible {t['visible']}); "
-          f"stop={record['stop_reason']}; {record['wall_seconds']:.0f} s; CLI cost estimate ${record['cli_reported_cost_usd']}")
-    print(f"parse: {record['parse']}")
-    if parsed["ok"]:
-        print(f"{'param':6s} {'target':>10s} {'generated':>10s} {'rel err':>8s}  given")
-        for name, s in record["score"]["per_param"].items():
-            print(f"{name:6s} {s['target']:10.4g} {s['generated']:10.4g} {s['rel_error']:8.2f}  {'yes' if s['provided'] else 'no'}")
-        for fam, s in record["score"]["families"].items():
-            print(f"family {fam:10s} mean err {s['mean_rel_error']:.2f}  recovered {s['recovered']}/{s['n']}")
-        print(f"PSD log10 RMS difference: {record['score']['psd_log10_rms']:.2f}")
-    print("projected batch cost (USD) at these token counts:")
+    for st in record["stages"]:
+        t = st["tokens"]
+        print(f"stage {st['stage']}: input {t['input']}, output {t['output_total']} (thinking {t['thinking']}); "
+              f"stop={st['stop_reason']}; {st['wall_seconds']:.0f} s; parse {st['parse']}")
+    scored = [st for st in record["stages"] if "score" in st]
+    if scored:
+        print(f"{'param':6s} {'target':>10s} " + " ".join(f"{'stage ' + str(st['stage']):>20s}" for st in scored))
+        for name in p_ref:
+            cells = []
+            for st in scored:
+                v = st["score"]["per_param"][name]
+                cells.append(f"{v['generated']:10.4g} {v['rel_error']:6.2f} {'g' if v['provided'] else ' '}")
+            print(f"{name:6s} {p_ref[name]:10.4g} " + " ".join(f"{c:>20s}" for c in cells))
+        for fam in params.FAMILIES:
+            print(f"family {fam:10s} " + " | ".join(
+                f"stage {st['stage']}: median {st['score']['families'][fam]['median_rel_error']:.2f}, "
+                f"{st['score']['families'][fam]['recovered']}/{st['score']['families'][fam]['n']} within 10%"
+                for st in scored))
+        print("PSD difference: " + ", ".join(f"stage {st['stage']} {st['score']['psd_log10_rms']:.2f}" for st in scored))
+    print(f"chain tokens: input {tot_in}, output {tot_out}; projected batch cost (USD):")
     for model, row in record["projection_usd"].items():
-        print(f"  {model:18s} per run ${row['per_run_batch']:.3f} | " +
-              " | ".join(f"{k} ({DESIGNS[k]} runs): ${row[k]:.0f}" for k in DESIGNS))
+        print(f"  {model:18s} per chain ${row['per_chain_batch']:.2f} | " +
+              " | ".join(f"{k}: ${row[k]:.0f}" for k in DESIGNS))
 
 
 if __name__ == "__main__":
