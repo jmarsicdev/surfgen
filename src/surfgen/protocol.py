@@ -53,8 +53,23 @@ def grid_header(mode: str, grid: int, dx_out: float, scan_shape, scan_dx: float)
     raise ValueError(mode)
 
 
-def user_prompt(params: dict, stage: int, header: str | None = None) -> str:
-    """Stage prompt. The header, if any, opens stage 1."""
+def noise_field(grid: int, seed: int) -> np.ndarray:
+    """Gaussian white noise as integers 0-1000 (mean 500, standard deviation 150, clipped)."""
+    z = np.random.default_rng(seed).normal(500.0, 150.0, (grid, grid))
+    return np.clip(np.rint(z), 0, 1000).astype(int)
+
+
+def noise_block(noise: np.ndarray) -> str:
+    grid = noise.shape[0]
+    rows = [f"R{i + 1:03d}: " + ",".join(map(str, row)) for i, row in enumerate(noise)]
+    return "\n".join(
+        [f"Starting noise field (Gaussian white noise, {grid} × {grid}, integers 0 to 1000, mean 500):"]
+        + rows + ["", "Use this noise field as the starting point for your height map: keep its "
+                  "point-to-point variation and reshape it so that the parameters are matched."])
+
+
+def user_prompt(params: dict, stage: int, header: str | None = None, noise: np.ndarray | None = None) -> str:
+    """Stage prompt. The header and the noise field, if any, belong to stage 1."""
     lines = []
     if stage == 1 and header:
         lines += [header, ""]
@@ -62,6 +77,8 @@ def user_prompt(params: dict, stage: int, header: str | None = None) -> str:
     for name in stage_params(stage):
         unit, definition = INFO[name]
         lines.append(f"{name} = {params[name]:.4g}{' ' + unit if unit else ''} — {definition}")
+    if stage == 1 and noise is not None:
+        lines += ["", noise_block(noise)]
     lines += ["", "Generate the height map." if stage == 1 else
               "Generate the height map again so that all parameters given so far are matched."]
     return "\n".join(lines)

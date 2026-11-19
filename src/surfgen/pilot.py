@@ -99,6 +99,8 @@ def main():
     ap.add_argument("--grid-info", default="scan", choices=protocol.GRID_INFO,
                     help="stage 1 opening line: the scan's size and sampling interval (scan), "
                          "the output grid's sampling interval (output), or nothing (none)")
+    ap.add_argument("--noise-seed", type=int, default=None,
+                    help="give stage 1 a Gaussian white-noise grid from this seed as a starting point")
     ap.add_argument("--model", default="claude-opus-5-5")
     ap.add_argument("--effort", default="medium")
     ap.add_argument("--timeout", type=int, default=5400, help="seconds per stage")
@@ -114,19 +116,23 @@ def main():
     system = protocol.system_prompt(a.grid)
     n_stages = len(protocol.STAGES)
     header = protocol.grid_header(a.grid_info, a.grid, dx_out, ref["shape"], dx)
-    prompts = [protocol.user_prompt(p_ref, s, header) for s in range(1, n_stages + 1)]
+    noise = protocol.noise_field(a.grid, a.noise_seed) if a.noise_seed is not None else None
+    prompts = [protocol.user_prompt(p_ref, s, header, noise) for s in range(1, n_stages + 1)]
     if a.dry_run:
         print("[system]", system, sep="\n")
         for s, text in enumerate(prompts, 1):
             print(f"\n[user, stage {s}]", text, sep="\n")
         return
 
-    run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{a.sample}_chain_g{a.grid}_info-{a.grid_info}_{a.model}_{a.effort}"
+    noise_tag = f"_noise{a.noise_seed}" if noise is not None else ""
+    run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{a.sample}_chain_g{a.grid}_info-{a.grid_info}{noise_tag}_{a.model}_{a.effort}"
     run_dir.mkdir(parents=True)
     (run_dir / "prompt.txt").write_text(
         f"[system]\n{system}\n" + "".join(f"\n[user, stage {s}]\n{t}\n" for s, t in enumerate(prompts, 1)))
+    if noise is not None:
+        np.save(run_dir / "noise.npy", noise)
     record = {
-        "sample": a.sample, "grid": a.grid, "grid_info": a.grid_info, "model": a.model,
+        "sample": a.sample, "grid": a.grid, "grid_info": a.grid_info, "noise_seed": a.noise_seed, "model": a.model,
         "effort": a.effort, "temperature": "not settable on this model", "client": "claude-code-cli (subscription)",
         "catalog": io.catalog()[a.sample], "scan_shape": ref["shape"], "scan_dx_um": dx,
         "output_dx_um": dx_out, "s_filter_um": s_um, "missing_fraction": ref["missing_fraction"], "stages": [],
