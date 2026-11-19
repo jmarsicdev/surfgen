@@ -34,10 +34,11 @@ One conversation per surface, in two stages:
    Sda, Sha, Sdv, Shv) are added. The model returns a second height map.
 
 Target parameters are measured on the whole form-removed scan at the instrument pitch, with no
-cropping or resampling. The model returns a 200 × 200 grid (`--grid`) of labelled rows. The prompt
-states neither the levelling nor the sampling interval; `--state-pitch` adds one line giving the grid
-size and interval. Scoring always uses the pitch at which the grid spans the scan's field of view
-(about 5× the scan's), after a least-squares plane is removed.
+cropping or resampling. The model returns a 200 × 200 grid (`--grid`) of labelled rows. Stage 1
+opens with one line giving the scan's size and sampling interval and saying the output covers the
+same area; no levelling is stated. `--grid-info output` gives the output grid's sampling interval
+instead, and `--grid-info none` gives nothing. Scoring always uses the sampling interval at which the
+grid spans the scan's field of view (about 5× the scan's), after a least-squares plane is removed.
 
 The generated grid cannot hit every whole-scan target, because several parameters depend on pitch.
 Score results against what the measured surface reaches when resampled to the same grid.

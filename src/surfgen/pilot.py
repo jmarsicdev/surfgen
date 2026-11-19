@@ -3,9 +3,10 @@
     python -I -m surfgen.pilot --sample Sample_23 --grid 200
 
 Stage 1 gives the height and functional/volume families; stage 2 adds spatial, hybrid and
-feature in the same conversation. Targets are measured on the whole scan. The prompt states
-no levelling and, unless --state-pitch is given, no sampling interval; scoring always uses
-the pitch at which the grid spans the scan's field of view.
+feature in the same conversation. Targets are measured on the whole scan. Stage 1 opens by
+giving the scan's size and sampling interval and saying the output covers the same area
+(--grid-info changes this). No levelling is stated. Scoring always uses the sampling
+interval at which the grid spans the scan's field of view.
 
 Client: the Claude Code CLI in print mode, billed to the claude.ai subscription rather
 than the API. It sends only the benchmark prompts with no tools, so token counts transfer
@@ -95,8 +96,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sample", default="Sample_23", help="form-removed file name; Sample_23 is Sample_8_13_2.75x")
     ap.add_argument("--grid", type=int, default=200, help="output is grid x grid")
-    ap.add_argument("--state-pitch", action="store_true",
-                    help="tell the model the grid size and sampling interval (off by default)")
+    ap.add_argument("--grid-info", default="scan", choices=protocol.GRID_INFO,
+                    help="stage 1 opening line: the scan's size and sampling interval (scan), "
+                         "the output grid's sampling interval (output), or nothing (none)")
     ap.add_argument("--model", default="claude-opus-5-5")
     ap.add_argument("--effort", default="medium")
     ap.add_argument("--timeout", type=int, default=5400, help="seconds per stage")
@@ -111,21 +113,20 @@ def main():
     dx_out = io.output_pitch(ref, a.grid, "field")
     system = protocol.system_prompt(a.grid)
     n_stages = len(protocol.STAGES)
-    prompts = [protocol.user_prompt(p_ref, s, a.grid, dx_out if a.state_pitch else None)
-               for s in range(1, n_stages + 1)]
+    header = protocol.grid_header(a.grid_info, a.grid, dx_out, ref["shape"], dx)
+    prompts = [protocol.user_prompt(p_ref, s, header) for s in range(1, n_stages + 1)]
     if a.dry_run:
         print("[system]", system, sep="\n")
         for s, text in enumerate(prompts, 1):
             print(f"\n[user, stage {s}]", text, sep="\n")
         return
 
-    pitch_tag = "pitch" if a.state_pitch else "nopitch"
-    run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{a.sample}_chain_g{a.grid}_{pitch_tag}_{a.model}_{a.effort}"
+    run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{a.sample}_chain_g{a.grid}_info-{a.grid_info}_{a.model}_{a.effort}"
     run_dir.mkdir(parents=True)
     (run_dir / "prompt.txt").write_text(
         f"[system]\n{system}\n" + "".join(f"\n[user, stage {s}]\n{t}\n" for s, t in enumerate(prompts, 1)))
     record = {
-        "sample": a.sample, "grid": a.grid, "pitch_stated": a.state_pitch, "model": a.model,
+        "sample": a.sample, "grid": a.grid, "grid_info": a.grid_info, "model": a.model,
         "effort": a.effort, "temperature": "not settable on this model", "client": "claude-code-cli (subscription)",
         "catalog": io.catalog()[a.sample], "scan_shape": ref["shape"], "scan_dx_um": dx,
         "output_dx_um": dx_out, "s_filter_um": s_um, "missing_fraction": ref["missing_fraction"], "stages": [],
@@ -161,7 +162,7 @@ def main():
     if surfaces:
         figure(z_ref, dx, surfaces, dx_out, run_dir / "comparison.png",
                f"{a.sample} ({record['catalog']['process']}), {a.model}, {a.effort} effort, "
-               f"pitch {'stated' if a.state_pitch else 'not stated'}")
+               f"grid info: {a.grid_info}")
 
     print(f"run dir: {run_dir}")
     for st in record["stages"]:

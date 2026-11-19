@@ -2,7 +2,7 @@
 
 Design as of 2026-11-17: one conversation per surface, two stages. Stage 1 gives the
 height and functional/volume families; stage 2 adds spatial, hybrid and feature in the
-same conversation. The prompt states neither the levelling nor, by default, the pitch.
+same conversation. Stage 1 opens with the scan's size and sampling interval; no levelling is stated.
 """
 from __future__ import annotations
 
@@ -38,11 +38,26 @@ def given_through(stage: int) -> list[str]:
     return [p for s in range(1, stage + 1) for p in stage_params(s)]
 
 
-def user_prompt(params: dict, stage: int, grid: int, dx_out: float | None = None) -> str:
-    """Stage prompt. dx_out, if given, adds the grid line to stage 1."""
+GRID_INFO = ("scan", "output", "none")
+
+
+def grid_header(mode: str, grid: int, dx_out: float, scan_shape, scan_dx: float) -> str | None:
+    """Opening line of stage 1: what the model is told about spacing."""
+    if mode == "scan":
+        return (f"The original scan is {scan_shape[1]} × {scan_shape[0]} points with a sampling interval of "
+                f"{scan_dx:.4g} µm. Your {grid} × {grid} height map covers the same area.")
+    if mode == "output":
+        return f"Grid: {grid} × {grid} points, sampling interval {dx_out:.4g} µm in x and y."
+    if mode == "none":
+        return None
+    raise ValueError(mode)
+
+
+def user_prompt(params: dict, stage: int, header: str | None = None) -> str:
+    """Stage prompt. The header, if any, opens stage 1."""
     lines = []
-    if stage == 1 and dx_out is not None:
-        lines += [f"Grid: {grid} × {grid} points, sampling interval {dx_out:.4g} µm in x and y.", ""]
+    if stage == 1 and header:
+        lines += [header, ""]
     lines.append("Parameters (ISO 25178-2):" if stage == 1 else "Additional parameters (ISO 25178-2):")
     for name in stage_params(stage):
         unit, definition = INFO[name]
