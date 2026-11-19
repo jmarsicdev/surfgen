@@ -102,6 +102,8 @@ def main():
     ap.add_argument("--noise-seed", type=int, default=None,
                     help="give stage 1 a Gaussian white-noise grid from this seed as a starting point; "
                          "later stages are told to keep its point-to-point variation")
+    ap.add_argument("--noise-followup", default="keep", choices=list(protocol.NOISE_FOLLOWUP),
+                    help="sentence added to later stages when a noise field is used")
     ap.add_argument("--model", default="claude-opus-5-5")
     ap.add_argument("--effort", default="medium")
     ap.add_argument("--timeout", type=int, default=5400, help="seconds per stage")
@@ -118,14 +120,14 @@ def main():
     n_stages = len(protocol.STAGES)
     header = protocol.grid_header(a.grid_info, a.grid, dx_out, ref["shape"], dx)
     noise = protocol.noise_field(a.grid, a.noise_seed) if a.noise_seed is not None else None
-    prompts = [protocol.user_prompt(p_ref, s, header, noise) for s in range(1, n_stages + 1)]
+    prompts = [protocol.user_prompt(p_ref, s, header, noise, a.noise_followup) for s in range(1, n_stages + 1)]
     if a.dry_run:
         print("[system]", system, sep="\n")
         for s, text in enumerate(prompts, 1):
             print(f"\n[user, stage {s}]", text, sep="\n")
         return
 
-    noise_tag = f"_noise{a.noise_seed}keep" if noise is not None else ""
+    noise_tag = f"_noise{a.noise_seed}{a.noise_followup}" if noise is not None else ""
     run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{a.sample}_chain_g{a.grid}_info-{a.grid_info}{noise_tag}_{a.model}_{a.effort}"
     run_dir.mkdir(parents=True)
     (run_dir / "prompt.txt").write_text(
@@ -133,7 +135,7 @@ def main():
     if noise is not None:
         np.save(run_dir / "noise.npy", noise)
     record = {
-        "sample": a.sample, "grid": a.grid, "grid_info": a.grid_info, "noise_seed": a.noise_seed, "model": a.model,
+        "sample": a.sample, "grid": a.grid, "grid_info": a.grid_info, "noise_seed": a.noise_seed, "noise_followup": a.noise_followup if noise is not None else None, "model": a.model,
         "effort": a.effort, "temperature": "not settable on this model", "client": "claude-code-cli (subscription)",
         "catalog": io.catalog()[a.sample], "scan_shape": ref["shape"], "scan_dx_um": dx,
         "output_dx_um": dx_out, "s_filter_um": s_um, "missing_fraction": ref["missing_fraction"], "stages": [],
@@ -147,8 +149,11 @@ def main():
             out = resp.pop("result", "") or ""
             (run_dir / f"response_stage{s}.txt").write_text(out)
             parsed = protocol.parse(out, a.grid)
+            if resp.get("safety_stops") and not parsed["ok"]:
+                parsed["failure"] = "safety_stop"  # halted by a safety classifier, not a formatting slip
             stage = {"stage": s, "families": protocol.STAGES[s - 1], "tokens": tokens(resp),
-                     "stop_reason": resp.get("stop_reason"), "wall_seconds": resp["wall_seconds"],
+                     "stop_reason": resp.get("stop_reason"), "safety_stops": resp.get("safety_stops", 0),
+                     "wall_seconds": resp["wall_seconds"],
                      "cli_reported_cost_usd": resp.get("total_cost_usd"),
                      "parse": {k: parsed.get(k) for k in ("ok", "failure", "strict", "scale")},
                      "cli_response": resp}

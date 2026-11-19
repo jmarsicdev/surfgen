@@ -68,7 +68,16 @@ def noise_block(noise: np.ndarray) -> str:
                   "point-to-point variation and reshape it so that the parameters are matched."])
 
 
-def user_prompt(params: dict, stage: int, header: str | None = None, noise: np.ndarray | None = None) -> str:
+NOISE_FOLLOWUP = {
+    "keep": "Keep the point-to-point variation of the starting noise field.",
+    "smooth": "Start from your previous height map and smooth it along the lay direction, keeping its "
+              "variation across the lay.",
+    "none": "",
+}
+
+
+def user_prompt(params: dict, stage: int, header: str | None = None, noise: np.ndarray | None = None,
+                noise_followup: str = "keep") -> str:
     """Stage prompt. The header and the noise field, if any, belong to stage 1."""
     lines = []
     if stage == 1 and header:
@@ -81,8 +90,8 @@ def user_prompt(params: dict, stage: int, header: str | None = None, noise: np.n
         lines += ["", noise_block(noise)]
     closing = ("Generate the height map." if stage == 1 else
                "Generate the height map again so that all parameters given so far are matched.")
-    if stage > 1 and noise is not None:
-        closing += " Keep the point-to-point variation of the starting noise field."
+    if stage > 1 and noise is not None and NOISE_FOLLOWUP[noise_followup]:
+        closing += " " + NOISE_FOLLOWUP[noise_followup]
     lines += ["", closing]
     return "\n".join(lines)
 
