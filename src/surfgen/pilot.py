@@ -100,7 +100,8 @@ def main():
                     help="stage 1 opening line: the scan's size and sampling interval (scan), "
                          "the output grid's sampling interval (output), or nothing (none)")
     ap.add_argument("--noise-seed", type=int, default=None,
-                    help="give stage 1 a Gaussian white-noise grid from this seed as a starting point")
+                    help="give stage 1 a Gaussian white-noise grid from this seed as a starting point; "
+                         "later stages are told to keep its point-to-point variation")
     ap.add_argument("--model", default="claude-opus-5-5")
     ap.add_argument("--effort", default="medium")
     ap.add_argument("--timeout", type=int, default=5400, help="seconds per stage")
@@ -124,7 +125,7 @@ def main():
             print(f"\n[user, stage {s}]", text, sep="\n")
         return
 
-    noise_tag = f"_noise{a.noise_seed}" if noise is not None else ""
+    noise_tag = f"_noise{a.noise_seed}keep" if noise is not None else ""
     run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{a.sample}_chain_g{a.grid}_info-{a.grid_info}{noise_tag}_{a.model}_{a.effort}"
     run_dir.mkdir(parents=True)
     (run_dir / "prompt.txt").write_text(

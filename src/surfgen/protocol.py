@@ -79,8 +79,11 @@ def user_prompt(params: dict, stage: int, header: str | None = None, noise: np.n
         lines.append(f"{name} = {params[name]:.4g}{' ' + unit if unit else ''} — {definition}")
     if stage == 1 and noise is not None:
         lines += ["", noise_block(noise)]
-    lines += ["", "Generate the height map." if stage == 1 else
-              "Generate the height map again so that all parameters given so far are matched."]
+    closing = ("Generate the height map." if stage == 1 else
+               "Generate the height map again so that all parameters given so far are matched.")
+    if stage > 1 and noise is not None:
+        closing += " Keep the point-to-point variation of the starting noise field."
+    lines += ["", closing]
     return "\n".join(lines)
 
 
