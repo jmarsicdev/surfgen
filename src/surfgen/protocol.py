@@ -10,7 +10,11 @@ import numpy as np
 
 from .params import FAMILIES, INFO, radial_psd
 
-STAGES = [["height", "functional"], ["spatial", "hybrid", "feature"]]
+STAGINGS = {
+    "height-functional": [["height", "functional"], ["spatial", "hybrid", "feature"]],
+    "height": [["height"], ["functional", "spatial", "hybrid", "feature"]],
+}
+STAGES = STAGINGS["height-functional"]
 
 
 def system_prompt(grid: int) -> str:
@@ -29,13 +33,13 @@ def system_prompt(grid: int) -> str:
     )
 
 
-def stage_params(stage: int) -> list[str]:
+def stage_params(stage: int, stages=STAGES) -> list[str]:
     """Parameters introduced at this stage (1-based)."""
-    return [p for fam in STAGES[stage - 1] for p in FAMILIES[fam]]
+    return [p for fam in stages[stage - 1] for p in FAMILIES[fam]]
 
 
-def given_through(stage: int) -> list[str]:
-    return [p for s in range(1, stage + 1) for p in stage_params(s)]
+def given_through(stage: int, stages=STAGES) -> list[str]:
+    return [p for s in range(1, stage + 1) for p in stage_params(s, stages)]
 
 
 GRID_INFO = ("scan", "output", "none")
@@ -77,13 +81,13 @@ NOISE_FOLLOWUP = {
 
 
 def user_prompt(params: dict, stage: int, header: str | None = None, noise: np.ndarray | None = None,
-                noise_followup: str = "keep") -> str:
+                noise_followup: str = "keep", stages=STAGES) -> str:
     """Stage prompt. The header and the noise field, if any, belong to stage 1."""
     lines = []
     if stage == 1 and header:
         lines += [header, ""]
     lines.append("Parameters (ISO 25178-2):" if stage == 1 else "Additional parameters (ISO 25178-2):")
-    for name in stage_params(stage):
+    for name in stage_params(stage, stages):
         unit, definition = INFO[name]
         lines.append(f"{name} = {params[name]:.4g}{' ' + unit if unit else ''} — {definition}")
     if stage == 1 and noise is not None:

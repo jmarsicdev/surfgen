@@ -99,6 +99,8 @@ def main():
     ap.add_argument("--grid-info", default="scan", choices=protocol.GRID_INFO,
                     help="stage 1 opening line: the scan's size and sampling interval (scan), "
                          "the output grid's sampling interval (output), or nothing (none)")
+    ap.add_argument("--staging", default="height-functional", choices=list(protocol.STAGINGS),
+                    help="families in stage 1; the rest are added in stage 2")
     ap.add_argument("--noise-seed", type=int, default=None,
                     help="give stage 1 a Gaussian white-noise grid from this seed as a starting point; "
                          "later stages are told to keep its point-to-point variation")
@@ -117,10 +119,11 @@ def main():
     p_ref = params.compute(z_ref, dx)
     dx_out = io.output_pitch(ref, a.grid, "field")
     system = protocol.system_prompt(a.grid)
-    n_stages = len(protocol.STAGES)
+    stages = protocol.STAGINGS[a.staging]
+    n_stages = len(stages)
     header = protocol.grid_header(a.grid_info, a.grid, dx_out, ref["shape"], dx)
     noise = protocol.noise_field(a.grid, a.noise_seed) if a.noise_seed is not None else None
-    prompts = [protocol.user_prompt(p_ref, s, header, noise, a.noise_followup) for s in range(1, n_stages + 1)]
+    prompts = [protocol.user_prompt(p_ref, s, header, noise, a.noise_followup, stages) for s in range(1, n_stages + 1)]
     if a.dry_run:
         print("[system]", system, sep="\n")
         for s, text in enumerate(prompts, 1):
@@ -128,14 +131,14 @@ def main():
         return
 
     noise_tag = f"_noise{a.noise_seed}{a.noise_followup}" if noise is not None else ""
-    run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{a.sample}_chain_g{a.grid}_info-{a.grid_info}{noise_tag}_{a.model}_{a.effort}"
+    run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{a.sample}_chain-{a.staging}_g{a.grid}_info-{a.grid_info}{noise_tag}_{a.model}_{a.effort}"
     run_dir.mkdir(parents=True)
     (run_dir / "prompt.txt").write_text(
         f"[system]\n{system}\n" + "".join(f"\n[user, stage {s}]\n{t}\n" for s, t in enumerate(prompts, 1)))
     if noise is not None:
         np.save(run_dir / "noise.npy", noise)
     record = {
-        "sample": a.sample, "grid": a.grid, "grid_info": a.grid_info, "noise_seed": a.noise_seed, "noise_followup": a.noise_followup if noise is not None else None, "model": a.model,
+        "sample": a.sample, "grid": a.grid, "staging": a.staging, "grid_info": a.grid_info, "noise_seed": a.noise_seed, "noise_followup": a.noise_followup if noise is not None else None, "model": a.model,
         "effort": a.effort, "temperature": "not settable on this model", "client": "claude-code-cli (subscription)",
         "catalog": io.catalog()[a.sample], "scan_shape": ref["shape"], "scan_dx_um": dx,
         "output_dx_um": dx_out, "s_filter_um": s_um, "missing_fraction": ref["missing_fraction"], "stages": [],
@@ -151,7 +154,7 @@ def main():
             parsed = protocol.parse(out, a.grid)
             if resp.get("safety_stops") and not parsed["ok"]:
                 parsed["failure"] = "safety_stop"  # halted by a safety classifier, not a formatting slip
-            stage = {"stage": s, "families": protocol.STAGES[s - 1], "tokens": tokens(resp),
+            stage = {"stage": s, "families": stages[s - 1], "tokens": tokens(resp),
                      "stop_reason": resp.get("stop_reason"), "safety_stops": resp.get("safety_stops", 0),
                      "wall_seconds": resp["wall_seconds"],
                      "cli_reported_cost_usd": resp.get("total_cost_usd"),
@@ -160,7 +163,7 @@ def main():
             if parsed["ok"]:
                 z_gen = params.prepare(parsed["z_um"], dx_out, s_um)
                 np.save(run_dir / f"generated_stage{s}.npy", z_gen)
-                stage["score"] = protocol.score(p_ref, params.compute(z_gen, dx_out), protocol.given_through(s))
+                stage["score"] = protocol.score(p_ref, params.compute(z_gen, dx_out), protocol.given_through(s, stages))
                 stage["score"]["psd_log10_rms"] = protocol.psd_distance(z_ref, dx, z_gen, dx_out)
                 surfaces.append((s, z_gen))
             record["stages"].append(stage)
