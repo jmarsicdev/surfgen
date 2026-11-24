@@ -47,7 +47,7 @@ The program is written once and then run unchanged on many different surfaces, e
 
 For each surface the program produces two height maps:
 Stage 1: made from the height and functional/volume parameters only.
-Stage 2: built on the stage 1 height map, using all the parameters.
+Stage 2: the stage 1 height map, modified so that all the parameters are matched. The two should be recognisably the same surface.
 
 How it is run: Python 3 with numpy and scipy, as `python program.py input.json output_dir`. input.json has the keys rows, cols, dx_um (sampling interval in µm), stage1_params and stage2_params (parameter name to value; stage2_params holds the parameters added at stage 2). The program writes output_dir/stage1.csv and output_dir/stage2.csv, each with rows lines of cols comma-separated heights in µm. It has up to {TIME_LIMIT_MIN} minutes per surface.
 
@@ -281,7 +281,7 @@ def apply(a):
             res = run_program(program, inp, d, TIME_LIMIT_MIN * 60)
             (d / "log.txt").write_text(f"exit {res['exit_code']} timed_out {res['timed_out']} seconds {res['seconds']:.1f}\n"
                                        f"--- stdout\n{res['stdout']}\n--- stderr\n{res['stderr']}")
-            shown = []
+            shown, raw = [], {}
             for s in (1, 2):
                 entry = {"sample": sample, "run": rep + 1, "stage": s, "seconds": round(res["seconds"], 1), "valid": False}
                 z, why = (None, "not written") if s not in res["files"] else load_surface(res["files"][s], *ref["shape"])
@@ -289,10 +289,14 @@ def apply(a):
                     entry["failure"] = "timed out" if res["timed_out"] else why
                     summary.append(entry)
                     continue
+                raw[s] = z
                 zg = params.prepare(z, dx, params.S_FILTER_PIXELS * dx)
                 sc = protocol.score(p_ref, params.compute(zg, dx), given[s])
                 entry.update(valid=True, psd_log10_rms=protocol.psd_distance(z_ref, dx, zg, dx),
                              within10=sum(v["recovered"] for v in sc["families"].values()),
+                             # how closely stage 2 follows stage 1, point for point (reported, not scored)
+                             stage1_correlation=(float(np.corrcoef(raw[1].ravel(), z.ravel())[0, 1])
+                                                 if s == 2 and 1 in raw else None),
                              families={k: {"median": v["median_rel_error"], "within10": v["recovered"], "n": v["n"]}
                                        for k, v in sc["families"].items()})
                 summary.append(entry)
@@ -306,7 +310,9 @@ def apply(a):
                        f"{sample} ({io.catalog()[sample]['process']}), code written by {rec['model']}, run 1")
             ok = [e for e in summary if e["sample"] == sample and e["run"] == rep + 1]
             print(f"{sample} run {rep + 1}: {res['seconds']:.0f} s; " + "; ".join(
-                f"stage {e['stage']} " + (f"{e['within10']}/28 within 10%, PSD {e['psd_log10_rms']:.2f}" if e["valid"] else f"FAILED ({e['failure']})")
+                f"stage {e['stage']} " + (f"{e['within10']}/28 within 10%, PSD {e['psd_log10_rms']:.2f}"
+                                           + (f", follows stage 1 r={e['stage1_correlation']:.2f}" if e.get("stage1_correlation") is not None else "")
+                                           if e["valid"] else f"FAILED ({e['failure']})")
                 for e in ok))
         with open(out_root / sample / "psd.csv", "w", newline="") as fh:
             w = csv.writer(fh)
