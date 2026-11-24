@@ -268,8 +268,32 @@ def apply(a):
     given = {1: _names(STAGE1_FAMILIES), 2: _names(STAGE1_FAMILIES + STAGE2_FAMILIES)}
     out_root = run_dir / "surfaces"
     rows_out, summary = [], []
+
+    # Run the program for every surface and repeat first, several at a time; then score.
+    targets = {sample: target(sample) for sample in a.samples}
+
+    def one(job):
+        sample, rep = job
+        ref, _, p_ref = targets[sample]
+        d = out_root / sample / f"run{rep + 1}"
+        log = d / "log.txt"
+        if log.exists():  # finished earlier: reuse
+            first = log.read_text().splitlines()[0].split()
+            files = {s: d / f"stage{s}.csv" for s in (1, 2) if (d / f"stage{s}.csv").exists()}
+            return job, {"exit_code": first[1], "timed_out": first[3] == "True", "seconds": float(first[5]),
+                         "stdout": "", "stderr": "", "files": files, "reused": True}
+        res = run_program(program, surface_input(ref, p_ref), d, TIME_LIMIT_MIN * 60)
+        log.write_text(f"exit {res['exit_code']} timed_out {res['timed_out']} seconds {res['seconds']:.1f}\n"
+                       f"--- stdout\n{res['stdout']}\n--- stderr\n{res['stderr']}")
+        return job, res
+
+    from concurrent.futures import ThreadPoolExecutor
+    jobs = [(sample, rep) for sample in a.samples for rep in range(a.repeats)]
+    with ThreadPoolExecutor(max_workers=a.jobs) as pool:
+        results = dict(pool.map(one, jobs))
+
     for sample in a.samples:
-        ref, z_ref, p_ref = target(sample)
+        ref, z_ref, p_ref = targets[sample]
         dx = ref["dx_um"]
         inp = surface_input(ref, p_ref)
         (out_root / sample).mkdir(parents=True, exist_ok=True)
@@ -277,10 +301,7 @@ def apply(a):
         f, pw = params.radial_psd(z_ref, dx)
         psd_rows = [("measured", 0, fi, pi) for fi, pi in zip(f, pw)]
         for rep in range(a.repeats):
-            d = out_root / sample / f"run{rep + 1}"
-            res = run_program(program, inp, d, TIME_LIMIT_MIN * 60)
-            (d / "log.txt").write_text(f"exit {res['exit_code']} timed_out {res['timed_out']} seconds {res['seconds']:.1f}\n"
-                                       f"--- stdout\n{res['stdout']}\n--- stderr\n{res['stderr']}")
+            res = results[(sample, rep)]
             shown, raw = [], {}
             for s in (1, 2):
                 entry = {"sample": sample, "run": rep + 1, "stage": s, "seconds": round(res["seconds"], 1), "valid": False}
@@ -339,6 +360,7 @@ def main():
     r.add_argument("run_dir")
     r.add_argument("--samples", nargs="+", required=True)
     r.add_argument("--repeats", type=int, default=3)
+    r.add_argument("--jobs", type=int, default=1, help="surfaces to run at once")
     r.set_defaults(func=apply)
     a = ap.parse_args()
     a.func(a)
