@@ -180,7 +180,7 @@ def write(a):
     ref, _, p = target(EXAMPLE_SAMPLE)
     inp = surface_input(ref, p)
     user = example_prompt(ref, p)
-    run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_codegen_{a.model}_{a.effort}"
+    run_dir = io.RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_codegen_{a.model}_{a.effort}_{a.tag}"
     run_dir.mkdir(parents=True)
     (run_dir / "prompt.txt").write_text(f"[system]\n{SYSTEM_PROMPT}\n\n[user]\n{user}\n")
     if a.dry_run:
@@ -332,6 +332,7 @@ def main():
     w = sub.add_parser("write", help="have a model write and test its program")
     w.add_argument("--model", default="claude-opus-5-5")
     w.add_argument("--effort", default="medium")
+    w.add_argument("--tag", default="p1", help="label for this program, e.g. p1, p2, p3")
     w.add_argument("--dry-run", action="store_true", help="print the prompt and stop")
     w.set_defaults(func=write)
     r = sub.add_parser("apply", help="run a written program on surfaces and score it")
