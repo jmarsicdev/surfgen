@@ -1,0 +1,47 @@
+[system]
+You are writing a program that generates synthetic areal surface height maps. The program will be given ISO 25178-2 surface texture parameters measured from a real surface, along with the measurement grid. It must produce a surface whose parameters, when measured the same way, match the given values as closely as possible. Make the surface however you want.
+
+The program is written once and then run unchanged on many different surfaces, each with its own parameter values and grid. An example from one surface is given below; the program must work for any values.
+
+For each surface the program produces two height maps:
+Stage 1: made from the height and functional/volume parameters only.
+Stage 2: built on the stage 1 height map, using all the parameters.
+
+How it is run: Python 3 with numpy and scipy, as `python program.py input.json output_dir`. input.json has the keys rows, cols, dx_um (sampling interval in µm), stage1_params and stage2_params (parameter name to value; stage2_params holds the parameters added at stage 2). The program writes output_dir/stage1.csv and output_dir/stage2.csv, each with rows lines of cols comma-separated heights in µm. It has up to 10 minutes per surface.
+
+You may test before submitting: reply with the complete program in one python code block and it will be run on the example, and whatever it prints will be returned to you. When you are satisfied, reply with the final program in one python code block followed by the word FINAL on its own line. You have at most 5 test runs.
+
+[user]
+Example grid: 1024 × 1024 points, sampling interval 2.947 µm.
+
+Height and functional/volume parameters (stage1_params):
+Sa = 0.1606 µm — arithmetic mean height
+Sq = 0.2203 µm — root mean square height
+Ssk = -1.322 — skewness of the height distribution
+Sku = 6.929 — kurtosis of the height distribution
+Sp = 0.8085 µm — maximum peak height above the mean plane
+Sv = 1.643 µm — maximum pit depth below the mean plane
+Sz = 2.451 µm — maximum height, Sp + Sv
+Sk = 0.4568 µm — core height from the material ratio curve
+Spk = 0.1488 µm — reduced peak height
+Svk = 0.3967 µm — reduced dale (valley) depth
+Smr1 = 8.201 % — material ratio separating peaks from the core
+Smr2 = 86.49 % — material ratio separating dales from the core
+Vmp = 0.007695 µm³/µm² — peak material volume at material ratio 10 %
+Vmc = 0.1691 µm³/µm² — core material volume between material ratios 10 % and 80 %
+Vvc = 0.2069 µm³/µm² — core void volume between material ratios 10 % and 80 %
+Vvv = 0.03728 µm³/µm² — dale void volume at material ratio 80 %
+
+Spatial, hybrid and feature parameters (stage2_params):
+Sal = 32.13 µm — autocorrelation length: shortest lag at which the autocorrelation falls to 0.2
+Str = 0.0222 — texture aspect ratio: shortest / longest 0.2 autocorrelation lag (1 = isotropic)
+Std = 93 deg — texture (lay) direction, measured from the row (x) direction, 0-180
+Sdq = 0.02298 — root mean square gradient
+Sdr = 0.0264 % — developed interfacial area ratio
+Spd = 235.8 1/mm² — density of significant peaks (watershed, Wolf pruning 5 % of Sz)
+Spc = 8.588 1/mm — arithmetic mean curvature of significant peaks
+S10z = 2.22 µm — ten-point height: mean of 5 highest peaks plus mean of 5 deepest pits
+Sda = 3737 µm² — mean dale area
+Sha = 4241 µm² — mean hill area
+Sdv = 66.92 µm³ — mean dale volume
+Shv = 64.86 µm³ — mean hill volume

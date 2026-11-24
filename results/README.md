@@ -1,5 +1,9 @@
 # Pilot results, 2026-11-12
 
+> **Newer results:** the code-generation baseline (2026-11-24), where the model writes a program that
+> generates the surface, is in [`codegen-opus-5-5/`](codegen-opus-5-5/README.md). It supersedes the
+> text-grid design described on this page.
+
 Eight single generations on one surface, to check that the pipeline works, measure token use, and
 set a budget. These are not benchmark results: each cell is one run, so differences between models
 or effort levels may be run-to-run variation.

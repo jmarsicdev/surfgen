@@ -43,7 +43,7 @@ PRICES = {"claude-sonnet-5-5": (2, 10), "claude-opus-5-5": (4, 20),
 
 SYSTEM_PROMPT = f"""You are writing a program that generates synthetic areal surface height maps. The program will be given ISO 25178-2 surface texture parameters measured from a real surface, along with the measurement grid. It must produce a surface whose parameters, when measured the same way, match the given values as closely as possible. Make the surface however you want.
 
-The program is written once and then run unchanged on many different surfaces, each with its own parameter values and grid. An example from one surface is given below; the program must work for any values.
+The program is written once and then run unchanged on many different surfaces, each with its own parameter values and grid. An example from one surface is given below; the program must work for any values. It is run several times on each surface, and each run should give a different surface.
 
 For each surface the program produces two height maps:
 Stage 1: made from the height and functional/volume parameters only.
